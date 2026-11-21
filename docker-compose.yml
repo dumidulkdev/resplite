@@ -1,0 +1,14 @@
+services:
+  resplite:
+    build: .
+    ports:
+      - "6380:6380"
+      - "6381:6381"
+    volumes:
+      - resplite-data:/data
+    environment:
+      RESPLITE_DATA_DIR: /data
+      RESPLITE_AOF_FSYNC: everysec
+
+volumes:
+  resplite-data:
