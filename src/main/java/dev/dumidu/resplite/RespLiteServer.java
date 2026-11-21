@@ -6,8 +6,11 @@ import dev.dumidu.resplite.command.CommandRegistry;
 import dev.dumidu.resplite.config.RespLiteConfig;
 import dev.dumidu.resplite.persistence.AofReplayer;
 import dev.dumidu.resplite.persistence.AofWriter;
+import dev.dumidu.resplite.persistence.SnapshotFormat;
+import dev.dumidu.resplite.persistence.SnapshotScheduler;
 import dev.dumidu.resplite.protocol.RespDecoder;
 import dev.dumidu.resplite.protocol.RespEncoderHandler;
+import dev.dumidu.resplite.server.PersistenceContext;
 import dev.dumidu.resplite.server.RespCommandHandler;
 import dev.dumidu.resplite.server.ServerMetrics;
 import dev.dumidu.resplite.store.ActiveExpiryScanner;
@@ -34,13 +37,14 @@ public class RespLiteServer {
     private final ServerMetrics metrics;
     private final CommandDispatcher dispatcher;
     private final Clock clock;
+    private final PersistenceContext persistenceContext;
 
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
     private Channel serverChannel;
     private final AtomicReference<java.util.function.Consumer<java.util.List<String>>> writeHook = new AtomicReference<>();
     private ActiveExpiryScanner expiryScanner;
-    private AofWriter aofWriter;
+    private SnapshotScheduler snapshotScheduler;
 
     public RespLiteServer(RespLiteConfig config) {
         this(config, Clock.systemUTC());
@@ -51,28 +55,39 @@ public class RespLiteServer {
         this.clock = clock;
         this.keyspace = new Keyspace(clock);
         this.metrics = new ServerMetrics();
-        CommandContext ctx = new CommandContext(keyspace, metrics, cmd -> {
-            java.util.function.Consumer<java.util.List<String>> hook = writeHook.get();
-            if (hook != null) {
-                hook.accept(cmd);
-            }
-        });
-        this.dispatcher = new CommandDispatcher(ctx, CommandRegistry.createDefaults());
+        AofWriter aofWriter = null;
+        SnapshotScheduler sched = null;
         try {
+            if (config.snapshotEnabled()) {
+                SnapshotFormat.load(config.snapshotPath(), keyspace);
+            }
             if (config.aofEnabled()) {
                 AofReplayer.replay(config.aofPath(), keyspace);
                 aofWriter = new AofWriter(config.aofPath(), config.aofFsync());
+                final AofWriter writer = aofWriter;
                 setWriteHook(cmd -> {
                     try {
-                        aofWriter.append(cmd);
+                        writer.append(cmd);
                     } catch (Exception e) {
                         log.error("AOF append failed: {}", e.getMessage());
                     }
                 });
             }
+            if (config.snapshotEnabled()) {
+                sched = new SnapshotScheduler(keyspace, config.snapshotPath(), config.snapshotIntervalSeconds());
+            }
         } catch (Exception e) {
-            throw new IllegalStateException("Failed to initialize AOF", e);
+            throw new IllegalStateException("Failed to initialize persistence", e);
         }
+        this.snapshotScheduler = sched;
+        this.persistenceContext = new PersistenceContext(aofWriter, sched);
+        CommandContext ctx = new CommandContext(keyspace, metrics, cmd -> {
+            java.util.function.Consumer<java.util.List<String>> hook = writeHook.get();
+            if (hook != null) {
+                hook.accept(cmd);
+            }
+        }, persistenceContext);
+        this.dispatcher = new CommandDispatcher(ctx, CommandRegistry.createDefaults());
     }
 
     public void setWriteHook(java.util.function.Consumer<java.util.List<String>> hook) {
@@ -126,9 +141,12 @@ public class RespLiteServer {
         if (expiryScanner != null) {
             expiryScanner.close();
         }
-        if (aofWriter != null) {
+        if (snapshotScheduler != null) {
+            snapshotScheduler.close();
+        }
+        if (persistenceContext != null && persistenceContext.aofWriter() != null) {
             try {
-                aofWriter.close();
+                persistenceContext.aofWriter().close();
             } catch (Exception e) {
                 log.warn("AOF close error: {}", e.getMessage());
             }

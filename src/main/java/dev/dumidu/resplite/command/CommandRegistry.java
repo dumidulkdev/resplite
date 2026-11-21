@@ -31,7 +31,10 @@ public final class CommandRegistry {
                 new TtlCommand(),
                 new PttlCommand(),
                 new PersistCommand(),
-                new ExpireAtCommand()
+                new ExpireAtCommand(),
+                new SaveCommand(),
+                new BgSaveCommand(),
+                new BgRewriteAofCommand()
         );
     }
 }
