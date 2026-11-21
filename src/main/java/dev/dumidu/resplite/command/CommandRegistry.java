@@ -1,7 +1,9 @@
 package dev.dumidu.resplite.command;
 
 import dev.dumidu.resplite.command.handlers.*;
+import dev.dumidu.resplite.config.RespLiteConfig;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public final class CommandRegistry {
@@ -9,7 +11,11 @@ public final class CommandRegistry {
     }
 
     public static List<CommandHandler> createDefaults() {
-        return List.of(
+        return createDefaults(null);
+    }
+
+    public static List<CommandHandler> createDefaults(RespLiteConfig config) {
+        List<CommandHandler> handlers = new ArrayList<>(List.of(
                 new PingCommand(),
                 new EchoCommand(),
                 new GetCommand(),
@@ -35,6 +41,10 @@ public final class CommandRegistry {
                 new SaveCommand(),
                 new BgSaveCommand(),
                 new BgRewriteAofCommand()
-        );
+        ));
+        if (config != null) {
+            handlers.add(new InfoCommand(config));
+        }
+        return handlers;
     }
 }

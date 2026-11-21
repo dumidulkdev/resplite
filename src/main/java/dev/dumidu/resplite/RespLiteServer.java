@@ -10,6 +10,7 @@ import dev.dumidu.resplite.persistence.SnapshotFormat;
 import dev.dumidu.resplite.persistence.SnapshotScheduler;
 import dev.dumidu.resplite.protocol.RespDecoder;
 import dev.dumidu.resplite.protocol.RespEncoderHandler;
+import dev.dumidu.resplite.server.ObservabilityHttpServer;
 import dev.dumidu.resplite.server.PersistenceContext;
 import dev.dumidu.resplite.server.RespCommandHandler;
 import dev.dumidu.resplite.server.ServerMetrics;
@@ -45,6 +46,7 @@ public class RespLiteServer {
     private final AtomicReference<java.util.function.Consumer<java.util.List<String>>> writeHook = new AtomicReference<>();
     private ActiveExpiryScanner expiryScanner;
     private SnapshotScheduler snapshotScheduler;
+    private ObservabilityHttpServer httpServer;
 
     public RespLiteServer(RespLiteConfig config) {
         this(config, Clock.systemUTC());
@@ -87,7 +89,7 @@ public class RespLiteServer {
                 hook.accept(cmd);
             }
         }, persistenceContext);
-        this.dispatcher = new CommandDispatcher(ctx, CommandRegistry.createDefaults());
+        this.dispatcher = new CommandDispatcher(ctx, CommandRegistry.createDefaults(config));
     }
 
     public void setWriteHook(java.util.function.Consumer<java.util.List<String>> hook) {
@@ -127,7 +129,13 @@ public class RespLiteServer {
                 });
         serverChannel = b.bind(config.bindHost(), config.serverPort()).sync().channel();
         expiryScanner = new ActiveExpiryScanner(keyspace, config.expiryActiveIntervalMs(), config.expirySampleCount());
-        log.info("RespLite listening on {}:{}", config.bindHost(), config.serverPort());
+        try {
+            httpServer = new ObservabilityHttpServer(config, keyspace, metrics);
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("Failed to start HTTP observability server", e);
+        }
+        log.info("RespLite listening on {}:{} (HTTP {}:{})", config.bindHost(), config.serverPort(),
+                config.bindHost(), config.httpPort());
     }
 
     public void awaitShutdown() throws InterruptedException {
@@ -143,6 +151,9 @@ public class RespLiteServer {
         }
         if (snapshotScheduler != null) {
             snapshotScheduler.close();
+        }
+        if (httpServer != null) {
+            httpServer.close();
         }
         if (persistenceContext != null && persistenceContext.aofWriter() != null) {
             try {
