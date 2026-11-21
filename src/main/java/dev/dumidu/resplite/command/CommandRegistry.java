@@ -30,7 +30,8 @@ public final class CommandRegistry {
                 new PexpireCommand(),
                 new TtlCommand(),
                 new PttlCommand(),
-                new PersistCommand()
+                new PersistCommand(),
+                new ExpireAtCommand()
         );
     }
 }

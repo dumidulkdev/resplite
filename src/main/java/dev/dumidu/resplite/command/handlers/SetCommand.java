@@ -69,6 +69,9 @@ public final class SetCommand implements CommandHandler {
         ctx.keyspace().put(key, entry);
         List<String> log = new ArrayList<>(args.subList(0, 3));
         ctx.onWrite(log);
+        if (expireAt != StoredEntry.NO_EXPIRY) {
+            ctx.onWrite(List.of("EXPIREAT", key, Long.toString(expireAt)));
+        }
         return RespValue.ok("OK");
     }
 

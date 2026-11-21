@@ -4,6 +4,8 @@ import dev.dumidu.resplite.command.CommandContext;
 import dev.dumidu.resplite.command.CommandDispatcher;
 import dev.dumidu.resplite.command.CommandRegistry;
 import dev.dumidu.resplite.config.RespLiteConfig;
+import dev.dumidu.resplite.persistence.AofReplayer;
+import dev.dumidu.resplite.persistence.AofWriter;
 import dev.dumidu.resplite.protocol.RespDecoder;
 import dev.dumidu.resplite.protocol.RespEncoderHandler;
 import dev.dumidu.resplite.server.RespCommandHandler;
@@ -38,6 +40,7 @@ public class RespLiteServer {
     private Channel serverChannel;
     private final AtomicReference<java.util.function.Consumer<java.util.List<String>>> writeHook = new AtomicReference<>();
     private ActiveExpiryScanner expiryScanner;
+    private AofWriter aofWriter;
 
     public RespLiteServer(RespLiteConfig config) {
         this(config, Clock.systemUTC());
@@ -55,6 +58,21 @@ public class RespLiteServer {
             }
         });
         this.dispatcher = new CommandDispatcher(ctx, CommandRegistry.createDefaults());
+        try {
+            if (config.aofEnabled()) {
+                AofReplayer.replay(config.aofPath(), keyspace);
+                aofWriter = new AofWriter(config.aofPath(), config.aofFsync());
+                setWriteHook(cmd -> {
+                    try {
+                        aofWriter.append(cmd);
+                    } catch (Exception e) {
+                        log.error("AOF append failed: {}", e.getMessage());
+                    }
+                });
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to initialize AOF", e);
+        }
     }
 
     public void setWriteHook(java.util.function.Consumer<java.util.List<String>> hook) {
@@ -107,6 +125,13 @@ public class RespLiteServer {
         log.info("RespLite shutting down");
         if (expiryScanner != null) {
             expiryScanner.close();
+        }
+        if (aofWriter != null) {
+            try {
+                aofWriter.close();
+            } catch (Exception e) {
+                log.warn("AOF close error: {}", e.getMessage());
+            }
         }
         if (serverChannel != null) {
             serverChannel.close();
