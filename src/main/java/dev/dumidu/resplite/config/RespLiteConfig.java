@@ -95,7 +95,7 @@ public record RespLiteConfig(
         }
     }
 
-    static RespLiteConfig fromProperties(Properties props) throws IOException {
+    public static RespLiteConfig fromProperties(Properties props) throws IOException {
         String bind = props.getProperty("server.bind", "0.0.0.0");
         int port = parseInt(props.getProperty("server.port"), DEFAULT_PORT);
         int httpPort = parseInt(props.getProperty("http.port"), DEFAULT_HTTP_PORT);

@@ -16,5 +16,6 @@ public final class RespLiteMain {
         RespLiteServer server = new RespLiteServer(config);
         Runtime.getRuntime().addShutdownHook(new Thread(server::shutdown, "resplite-shutdown"));
         server.start();
+        server.awaitShutdown();
     }
 }
