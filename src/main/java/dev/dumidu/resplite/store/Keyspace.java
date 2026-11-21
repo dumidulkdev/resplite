@@ -140,6 +140,59 @@ public final class Keyspace {
         return sb.toString();
     }
 
+    public boolean expireAt(String key, long expireAtEpochMs) {
+        StoredEntry current = data.get(key);
+        if (current == null || current.isExpiredAt(nowMs())) {
+            if (current != null) {
+                data.remove(key, current);
+            }
+            return false;
+        }
+        StoredEntry updated = current.withExpiry(expireAtEpochMs);
+        data.put(key, updated);
+        adjustMemory(key, current, updated);
+        return true;
+    }
+
+    public boolean persist(String key) {
+        StoredEntry current = data.get(key);
+        if (current == null || current.isExpiredAt(nowMs())) {
+            if (current != null) {
+                data.remove(key, current);
+            }
+            return false;
+        }
+        if (!current.hasExpiry()) {
+            return true;
+        }
+        StoredEntry updated = current.withExpiry(StoredEntry.NO_EXPIRY);
+        data.put(key, updated);
+        adjustMemory(key, current, updated);
+        return true;
+    }
+
+    public long ttlSeconds(String key) {
+        StoredEntry entry = data.get(key);
+        if (entry == null || entry.isExpiredAt(nowMs())) {
+            if (entry != null) {
+                data.remove(key, entry);
+            }
+            return -2;
+        }
+        return ExpirySupport.ttlSeconds(entry, nowMs());
+    }
+
+    public long pttlMillis(String key) {
+        StoredEntry entry = data.get(key);
+        if (entry == null || entry.isExpiredAt(nowMs())) {
+            if (entry != null) {
+                data.remove(key, entry);
+            }
+            return -2;
+        }
+        return ExpirySupport.pttlMillis(entry, nowMs());
+    }
+
     public long increment(String key, long delta) {
         final long now = nowMs();
         final long[] result = new long[1];

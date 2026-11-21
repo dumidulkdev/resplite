@@ -8,6 +8,7 @@ import dev.dumidu.resplite.protocol.RespDecoder;
 import dev.dumidu.resplite.protocol.RespEncoderHandler;
 import dev.dumidu.resplite.server.RespCommandHandler;
 import dev.dumidu.resplite.server.ServerMetrics;
+import dev.dumidu.resplite.store.ActiveExpiryScanner;
 import dev.dumidu.resplite.store.Keyspace;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
@@ -36,6 +37,7 @@ public class RespLiteServer {
     private EventLoopGroup workerGroup;
     private Channel serverChannel;
     private final AtomicReference<java.util.function.Consumer<java.util.List<String>>> writeHook = new AtomicReference<>();
+    private ActiveExpiryScanner expiryScanner;
 
     public RespLiteServer(RespLiteConfig config) {
         this(config, Clock.systemUTC());
@@ -91,6 +93,7 @@ public class RespLiteServer {
                     }
                 });
         serverChannel = b.bind(config.bindHost(), config.serverPort()).sync().channel();
+        expiryScanner = new ActiveExpiryScanner(keyspace, config.expiryActiveIntervalMs(), config.expirySampleCount());
         log.info("RespLite listening on {}:{}", config.bindHost(), config.serverPort());
     }
 
@@ -102,6 +105,9 @@ public class RespLiteServer {
 
     public void shutdown() {
         log.info("RespLite shutting down");
+        if (expiryScanner != null) {
+            expiryScanner.close();
+        }
         if (serverChannel != null) {
             serverChannel.close();
         }

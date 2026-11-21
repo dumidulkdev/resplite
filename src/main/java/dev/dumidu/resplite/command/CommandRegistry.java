@@ -25,7 +25,12 @@ public final class CommandRegistry {
                 new DbsizeCommand(),
                 new FlushAllCommand(),
                 new CommandCommand(),
-                new QuitCommand()
+                new QuitCommand(),
+                new ExpireCommand(),
+                new PexpireCommand(),
+                new TtlCommand(),
+                new PttlCommand(),
+                new PersistCommand()
         );
     }
 }
